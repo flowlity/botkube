@@ -15,7 +15,7 @@ require (
 	github.com/infracloudio/msbotbuilder-go v0.2.5
 	github.com/knadh/koanf v1.4.1
 	github.com/mattermost/mattermost-server/v5 v5.39.3
-	github.com/olivere/elastic v6.2.37+incompatible
+	github.com/elastic/go-elasticsearch/v8 v8.3.0
 	github.com/prometheus/client_golang v1.12.2
 	github.com/sanity-io/litter v1.5.5
 	github.com/segmentio/analytics-go v3.1.0+incompatible

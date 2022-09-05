@@ -14,7 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	v4 "github.com/aws/aws-sdk-go/aws/signer/v4"
 	"github.com/aws/aws-sdk-go/service/sts"
-	"github.com/olivere/elastic"
+	elastic "github.com/elastic/go-elasticsearch/v8"
 	"github.com/sha1sum/aws_signing_client"
 	"github.com/sirupsen/logrus"
 
