@@ -4,6 +4,7 @@ require (
 	github.com/MakeNowJust/heredoc v1.0.0
 	github.com/aws/aws-sdk-go v1.44.20
 	github.com/bwmarrin/discordgo v0.25.0
+	github.com/elastic/go-elasticsearch/v8 v8.3.0
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/go-playground/locales v0.14.0
 	github.com/go-playground/universal-translator v0.18.0
@@ -15,7 +16,6 @@ require (
 	github.com/infracloudio/msbotbuilder-go v0.2.5
 	github.com/knadh/koanf v1.4.1
 	github.com/mattermost/mattermost-server/v5 v5.39.3
-	github.com/elastic/go-elasticsearch/v8 v8.3.0
 	github.com/prometheus/client_golang v1.12.2
 	github.com/sanity-io/litter v1.5.5
 	github.com/segmentio/analytics-go v3.1.0+incompatible
@@ -49,6 +49,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v3 v3.0.0 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/dyatlov/go-opengraph v0.0.0-20210112100619-dae8665a5b09 // indirect
+	github.com/elastic/elastic-transport-go/v8 v8.0.0-20211216131617-bbee439d559c // indirect
 	github.com/emicklei/go-restful/v3 v3.8.0 // indirect
 	github.com/evanphx/json-patch v4.12.0+incompatible // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect

@@ -73,33 +73,22 @@ func NewElasticsearch(log logrus.FieldLogger, c config.Elasticsearch, reporter A
 		if err != nil {
 			return nil, fmt.Errorf("while creating new AWS Signing client: %w", err)
 		}
+		elsClientParams := elastic.Config{
+  			Addresses: c.Server,
+  			Username:  c.Username,
+  			Password:  c.Password,
+		}
 		elsClient, err = elastic.NewClient(
-			elastic.SetURL(c.Server),
-			elastic.SetScheme("https"),
-			elastic.SetHttpClient(awsClient),
-			elastic.SetSniff(false),
-			elastic.SetHealthcheck(false),
-			elastic.SetGzip(false),
+			elsClientParams...
 		)
 		if err != nil {
 			return nil, fmt.Errorf("while creating new Elastic client: %w", err)
 		}
 	} else {
-		elsClientParams := []elastic.ClientOptionFunc{
-			elastic.SetURL(c.Server),
-			elastic.SetBasicAuth(c.Username, c.Password),
-			elastic.SetSniff(false),
-			elastic.SetHealthcheck(false),
-			elastic.SetGzip(true),
-		}
-
-		if c.SkipTLSVerify {
-			tr := &http.Transport{
-				// #nosec G402
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			}
-			httpClient := &http.Client{Transport: tr}
-			elsClientParams = append(elsClientParams, elastic.SetHttpClient(httpClient))
+		elsClientParams := elastic.Config{
+  			Addresses: c.Server,
+  			Username:  c.Username,
+  			Password:  c.Password,
 		}
 		// create elasticsearch client
 		elsClient, err = elastic.NewClient(elsClientParams...)
