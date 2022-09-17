@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"time"
+	"encoding/json"
+	"bytes"
 
-	"github.com/aws/aws-sdk-go/aws/session"
-	v4 "github.com/aws/aws-sdk-go/aws/signer/v4"
-	"github.com/aws/aws-sdk-go/service/sts"
 	elastic "github.com/elastic/go-elasticsearch/v8"
-	"github.com/sha1sum/aws_signing_client"
 	"github.com/sirupsen/logrus"
 
 	"github.com/kubeshop/botkube/pkg/config"
@@ -102,25 +100,25 @@ func (e *Elasticsearch) flushIndex(ctx context.Context, indexCfg config.ELSIndex
 			},
 		}
 
-		var buf bytes.Buffer
-		err := json.NewEncoder(&buf).Encode(mapping)
+		var mapping_buffer bytes.Buffer
+		err := json.NewEncoder(&mapping_buffer).Encode(mapping)
 		if err != nil {
 			return fmt.Errorf("while encoding mapping for new index: %w", err)
 		}
 
-		_, err := e.client.Indices.Create(indexName, e.client.Indices.Create.WithBody(&buf), e.client.Indices.Create.WithContext(ctx))
+		_, err = e.client.Indices.Create(indexName, e.client.Indices.Create.WithBody(&mapping_buffer), e.client.Indices.Create.WithContext(ctx))
 		if err != nil {
 			return fmt.Errorf("while creating index: %w", err)
 		}
 	}
 
 	// Send event to els
-	var buf bytes.Buffer
-	err := json.NewEncoder(&buf).Encode(event)
+	var event_buffer bytes.Buffer
+	err = json.NewEncoder(&event_buffer).Encode(event)
 	if err != nil {
 		return fmt.Errorf("while encoding event: %w", err)
 	}
-	_, err = e.client.Index(indexName, &buf, e.client.Index.WithContext(ctx))
+	_, err = e.client.Index(indexName, &event_buffer, e.client.Index.WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("while posting data to ELS: %w", err)
 	}
