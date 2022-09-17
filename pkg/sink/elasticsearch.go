@@ -2,15 +2,9 @@ package sink
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
-	"net/http"
-	"os"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	v4 "github.com/aws/aws-sdk-go/aws/signer/v4"
 	"github.com/aws/aws-sdk-go/service/sts"
@@ -57,7 +51,7 @@ func NewElasticsearch(log logrus.FieldLogger, c config.Elasticsearch, reporter A
 		Password:  c.Password,
 	}
 	// create elasticsearch client
-	elsClient, err = elastic.NewClient(elsClientParams...)
+	elsClient, err = elastic.NewClient(elsClientParams)
 	if err != nil {
 		return nil, fmt.Errorf("while creating new Elastic client: %w", err)
 	}
@@ -97,7 +91,7 @@ func (e *Elasticsearch) flushIndex(ctx context.Context, indexCfg config.ELSIndex
 	if err != nil {
 		return fmt.Errorf("while getting index: %w", err)
 	}
-	if !exists {
+	if exists.StatusCode != 200 {
 		// Create a new index.
 		mapping := mapping{
 			Settings: settings{
@@ -107,14 +101,26 @@ func (e *Elasticsearch) flushIndex(ctx context.Context, indexCfg config.ELSIndex
 				},
 			},
 		}
-		_, err := e.client.Indices.Create(indexName, e.client.Indices.Create.WithBody(mapping), e.client.Indices.Create.WithContext(ctx))
+
+		var buf bytes.Buffer
+		err := json.NewEncoder(&buf).Encode(mapping)
+		if err != nil {
+			return fmt.Errorf("while encoding mapping for new index: %w", err)
+		}
+
+		_, err := e.client.Indices.Create(indexName, e.client.Indices.Create.WithBody(&buf), e.client.Indices.Create.WithContext(ctx))
 		if err != nil {
 			return fmt.Errorf("while creating index: %w", err)
 		}
 	}
 
 	// Send event to els
-	_, err = e.client.Index(indexName, event, e.client.Index.WithContext(ctx))
+	var buf bytes.Buffer
+	err := json.NewEncoder(&buf).Encode(event)
+	if err != nil {
+		return fmt.Errorf("while encoding event: %w", err)
+	}
+	_, err = e.client.Index(indexName, &buf, e.client.Index.WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("while posting data to ELS: %w", err)
 	}
