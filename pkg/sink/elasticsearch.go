@@ -50,51 +50,16 @@ type Elasticsearch struct {
 func NewElasticsearch(log logrus.FieldLogger, c config.Elasticsearch, reporter AnalyticsReporter) (*Elasticsearch, error) {
 	var elsClient *elastic.Client
 	var err error
-	var creds *credentials.Credentials
-	if c.AWSSigning.Enabled {
-		// Get credentials from environment variables and create the AWS Signature Version 4 signer
-		sess := session.Must(session.NewSession())
-
-		// Use OIDC token to generate credentials if using IAM to Service Account
-		awsRoleARN := os.Getenv(awsRoleARNEnvName)
-		awsWebIdentityTokenFile := os.Getenv(awsWebIDTokenFileEnvName)
-		if awsRoleARN != "" && awsWebIdentityTokenFile != "" {
-			svc := sts.New(sess)
-			p := stscreds.NewWebIdentityRoleProviderWithOptions(svc, awsRoleARN, "", stscreds.FetchTokenPath(awsWebIdentityTokenFile))
-			creds = credentials.NewCredentials(p)
-		} else if c.AWSSigning.RoleArn != "" {
-			creds = stscreds.NewCredentials(sess, c.AWSSigning.RoleArn)
-		} else {
-			creds = ec2rolecreds.NewCredentials(sess)
-		}
-
-		signer := v4.NewSigner(creds)
-		awsClient, err := aws_signing_client.New(signer, nil, awsService, c.AWSSigning.AWSRegion)
-		if err != nil {
-			return nil, fmt.Errorf("while creating new AWS Signing client: %w", err)
-		}
-		elsClientParams := elastic.Config{
-  			Addresses: c.Server,
-  			Username:  c.Username,
-  			Password:  c.Password,
-		}
-		elsClient, err = elastic.NewClient(
-			elsClientParams...
-		)
-		if err != nil {
-			return nil, fmt.Errorf("while creating new Elastic client: %w", err)
-		}
-	} else {
-		elsClientParams := elastic.Config{
-  			Addresses: c.Server,
-  			Username:  c.Username,
-  			Password:  c.Password,
-		}
-		// create elasticsearch client
-		elsClient, err = elastic.NewClient(elsClientParams...)
-		if err != nil {
-			return nil, fmt.Errorf("while creating new Elastic client: %w", err)
-		}
+	
+	elsClientParams := elastic.Config{
+		Addresses: []string{c.Server},
+		Username:  c.Username,
+		Password:  c.Password,
+	}
+	// create elasticsearch client
+	elsClient, err = elastic.NewClient(elsClientParams...)
+	if err != nil {
+		return nil, fmt.Errorf("while creating new Elastic client: %w", err)
 	}
 
 	esNotifier := &Elasticsearch{
@@ -128,7 +93,7 @@ func (e *Elasticsearch) flushIndex(ctx context.Context, indexCfg config.ELSIndex
 	// Construct the ELS Index Name with timestamp suffix
 	indexName := indexCfg.Name + "-" + time.Now().Format(indexSuffixFormat)
 	// Create index if not exists
-	exists, err := e.client.IndexExists(indexName).Do(ctx)
+	exists, err := e.client.Indices.Exists([]string{indexName}, e.client.Indices.Exists.WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("while getting index: %w", err)
 	}
@@ -142,18 +107,18 @@ func (e *Elasticsearch) flushIndex(ctx context.Context, indexCfg config.ELSIndex
 				},
 			},
 		}
-		_, err := e.client.CreateIndex(indexName).BodyJson(mapping).Do(ctx)
+		_, err := e.client.Indices.Create(indexName, e.client.Indices.Create.WithBody(mapping), e.client.Indices.Create.WithContext(ctx))
 		if err != nil {
 			return fmt.Errorf("while creating index: %w", err)
 		}
 	}
 
 	// Send event to els
-	_, err = e.client.Index().Index(indexName).Type(indexCfg.Type).BodyJson(event).Do(ctx)
+	_, err = e.client.Index(indexName, event, e.client.Index.WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("while posting data to ELS: %w", err)
 	}
-	_, err = e.client.Flush().Index(indexName).Do(ctx)
+	_, err = e.client.Indices.Flush(e.client.Indices.Flush.WithIndex(indexName), e.client.Indices.Flush.WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("while flushing data in ELS: %w", err)
 	}
