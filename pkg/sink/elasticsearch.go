@@ -2,20 +2,12 @@ package sink
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
-	"net/http"
-	"os"
 	"time"
+	"encoding/json"
+	"bytes"
 
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
-	v4 "github.com/aws/aws-sdk-go/aws/signer/v4"
-	"github.com/aws/aws-sdk-go/service/sts"
-	"github.com/olivere/elastic"
-	"github.com/sha1sum/aws_signing_client"
+	elastic "github.com/elastic/go-elasticsearch/v8"
 	"github.com/sirupsen/logrus"
 
 	"github.com/kubeshop/botkube/pkg/config"
@@ -50,62 +42,16 @@ type Elasticsearch struct {
 func NewElasticsearch(log logrus.FieldLogger, c config.Elasticsearch, reporter AnalyticsReporter) (*Elasticsearch, error) {
 	var elsClient *elastic.Client
 	var err error
-	var creds *credentials.Credentials
-	if c.AWSSigning.Enabled {
-		// Get credentials from environment variables and create the AWS Signature Version 4 signer
-		sess := session.Must(session.NewSession())
-
-		// Use OIDC token to generate credentials if using IAM to Service Account
-		awsRoleARN := os.Getenv(awsRoleARNEnvName)
-		awsWebIdentityTokenFile := os.Getenv(awsWebIDTokenFileEnvName)
-		if awsRoleARN != "" && awsWebIdentityTokenFile != "" {
-			svc := sts.New(sess)
-			p := stscreds.NewWebIdentityRoleProviderWithOptions(svc, awsRoleARN, "", stscreds.FetchTokenPath(awsWebIdentityTokenFile))
-			creds = credentials.NewCredentials(p)
-		} else if c.AWSSigning.RoleArn != "" {
-			creds = stscreds.NewCredentials(sess, c.AWSSigning.RoleArn)
-		} else {
-			creds = ec2rolecreds.NewCredentials(sess)
-		}
-
-		signer := v4.NewSigner(creds)
-		awsClient, err := aws_signing_client.New(signer, nil, awsService, c.AWSSigning.AWSRegion)
-		if err != nil {
-			return nil, fmt.Errorf("while creating new AWS Signing client: %w", err)
-		}
-		elsClient, err = elastic.NewClient(
-			elastic.SetURL(c.Server),
-			elastic.SetScheme("https"),
-			elastic.SetHttpClient(awsClient),
-			elastic.SetSniff(false),
-			elastic.SetHealthcheck(false),
-			elastic.SetGzip(false),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("while creating new Elastic client: %w", err)
-		}
-	} else {
-		elsClientParams := []elastic.ClientOptionFunc{
-			elastic.SetURL(c.Server),
-			elastic.SetBasicAuth(c.Username, c.Password),
-			elastic.SetSniff(false),
-			elastic.SetHealthcheck(false),
-			elastic.SetGzip(true),
-		}
-
-		if c.SkipTLSVerify {
-			tr := &http.Transport{
-				// #nosec G402
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			}
-			httpClient := &http.Client{Transport: tr}
-			elsClientParams = append(elsClientParams, elastic.SetHttpClient(httpClient))
-		}
-		// create elasticsearch client
-		elsClient, err = elastic.NewClient(elsClientParams...)
-		if err != nil {
-			return nil, fmt.Errorf("while creating new Elastic client: %w", err)
-		}
+	
+	elsClientParams := elastic.Config{
+		Addresses: []string{c.Server},
+		Username:  c.Username,
+		Password:  c.Password,
+	}
+	// create elasticsearch client
+	elsClient, err = elastic.NewClient(elsClientParams)
+	if err != nil {
+		return nil, fmt.Errorf("while creating new Elastic client: %w", err)
 	}
 
 	esNotifier := &Elasticsearch{
@@ -139,11 +85,11 @@ func (e *Elasticsearch) flushIndex(ctx context.Context, indexCfg config.ELSIndex
 	// Construct the ELS Index Name with timestamp suffix
 	indexName := indexCfg.Name + "-" + time.Now().Format(indexSuffixFormat)
 	// Create index if not exists
-	exists, err := e.client.IndexExists(indexName).Do(ctx)
+	exists, err := e.client.Indices.Exists([]string{indexName}, e.client.Indices.Exists.WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("while getting index: %w", err)
 	}
-	if !exists {
+	if exists.StatusCode != 200 {
 		// Create a new index.
 		mapping := mapping{
 			Settings: settings{
@@ -153,18 +99,30 @@ func (e *Elasticsearch) flushIndex(ctx context.Context, indexCfg config.ELSIndex
 				},
 			},
 		}
-		_, err := e.client.CreateIndex(indexName).BodyJson(mapping).Do(ctx)
+
+		var mapping_buffer bytes.Buffer
+		err := json.NewEncoder(&mapping_buffer).Encode(mapping)
+		if err != nil {
+			return fmt.Errorf("while encoding mapping for new index: %w", err)
+		}
+
+		_, err = e.client.Indices.Create(indexName, e.client.Indices.Create.WithBody(&mapping_buffer), e.client.Indices.Create.WithContext(ctx))
 		if err != nil {
 			return fmt.Errorf("while creating index: %w", err)
 		}
 	}
 
 	// Send event to els
-	_, err = e.client.Index().Index(indexName).Type(indexCfg.Type).BodyJson(event).Do(ctx)
+	var event_buffer bytes.Buffer
+	err = json.NewEncoder(&event_buffer).Encode(event)
+	if err != nil {
+		return fmt.Errorf("while encoding event: %w", err)
+	}
+	_, err = e.client.Index(indexName, &event_buffer, e.client.Index.WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("while posting data to ELS: %w", err)
 	}
-	_, err = e.client.Flush().Index(indexName).Do(ctx)
+	_, err = e.client.Indices.Flush(e.client.Indices.Flush.WithIndex(indexName), e.client.Indices.Flush.WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("while flushing data in ELS: %w", err)
 	}
