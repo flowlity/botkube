@@ -115,7 +115,11 @@ func New(objectMeta metaV1.ObjectMeta, object interface{}, eventType config.Even
 		event.Level = LevelMap[config.EventType(strings.ToLower(eventObj.Type))]
 		event.Count = eventObj.Count
 		event.Action = eventObj.Action
-		event.TimeStamp = eventObj.LastTimestamp.Time
+		if eventObj.LastTimestamp.IsZero() {
+			event.TimeStamp = eventObj.EventTime.Time
+		} else {
+			event.TimeStamp = eventObj.LastTimestamp.Time  // This is the bugging timestamp
+		}
 		// Compatible with events.k8s.io/v1
 		if eventObj.LastTimestamp.IsZero() && eventObj.Series != nil {
 			event.TimeStamp = eventObj.Series.LastObservedTime.Time
