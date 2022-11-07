@@ -19,6 +19,8 @@ func parseJsonpath(obj interface{}, jsonpathStr string) (string, error) {
 	if err := j.Parse(fields); err != nil {
 		return "", err
 	}
+	
+	j = j.AllowMissingKeys(true)
 
 	values, err := j.FindResults(obj)
 	if err != nil {
